@@ -1,6 +1,6 @@
 #!@PYTHON@
 
-# hello.in
+# quickey.in
 #
 # Copyright 2021 Adi Hezral
 #
@@ -28,9 +28,9 @@ localedir = '@localedir@'
 
 sys.path.insert(1, pkgdatadir)
 signal.signal(signal.SIGINT, signal.SIG_DFL)
-gettext.install('hello', localedir)
+gettext.install('quickey', localedir)
 
 if __name__ == '__main__':
 
-    from hello import main
+    from quickey import main
     sys.exit(main.main(VERSION))

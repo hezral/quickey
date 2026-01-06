@@ -1,5 +1,5 @@
 pkgdatadir = join_paths(get_option('prefix'), get_option('datadir'), meson.project_name())
-moduledir = join_paths(pkgdatadir, 'hello')
+moduledir = join_paths(pkgdatadir, 'quickey')
 gnome = import('gnome')
 
 python = import('python')
@@ -18,11 +18,20 @@ configure_file(
   install_dir: get_option('bindir')
 )
 
-hello_sources = [
+quickey_sources = [
   '__init__.py',
   'main.py',
   'window.py',
-  'mode_switch.py'
+  'mode_switch.py',
+  'preferences.py'
 ]
 
-install_data(hello_sources, install_dir: moduledir)
+install_data(quickey_sources, install_dir: moduledir)
+
+install_data(
+  [
+    'sub_utils/__init__.py',
+    'sub_utils/logging_util.py',
+  ],
+  install_dir: join_paths(moduledir, 'sub_utils')
+)

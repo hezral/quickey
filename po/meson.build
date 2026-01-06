@@ -1,1 +1,1 @@
-i18n.gettext('hello', preset: 'glib')
+i18n.gettext('quickey', preset: 'glib')

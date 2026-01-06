@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="quickey">
+	<schema id="com.github.hezral.quickey" path="/com/github/hezral/quickey/">
+		<key name="buttons-json" type="s">
+			<default>'[{"name": "Media", "icon": "multimedia-player", "type": "internal", "action": "media"}, {"name": "Files", "icon": "system-file-manager", "type": "internal", "action": "files"}, {"name": "Screenshot", "icon": "applets-screenshooter", "type": "internal", "action": "screenshot"}, {"name": "Empty", "icon": "list-add-symbolic", "type": "empty", "action": ""}, {"name": "Empty", "icon": "list-add-symbolic", "type": "empty", "action": ""}, {"name": "Empty", "icon": "list-add-symbolic", "type": "empty", "action": ""}, {"name": "Empty", "icon": "list-add-symbolic", "type": "empty", "action": ""}, {"name": "Quickey Preferences", "icon": "open-menu", "type": "internal", "action": "preferences"}]'</default>
+			<summary>JSON string containing button configurations</summary>
+			<description>A JSON array of objects, each representing a button in the ring menu.</description>
+		</key>
+	</schema>
+</schemalist>

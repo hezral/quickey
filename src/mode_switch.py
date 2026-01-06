@@ -17,14 +17,19 @@ class ModeSwitch(Gtk.Grid):
     .modeswitch:checked {background-clip: border-box; background-color: rgba(0,0,0,0.1); background-image: none;}
     """
     
-    css_provider = Gtk.CssProvider()
-    css_provider.load_from_data(CSS.encode())
-    Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+    css_provider = None
     
     active = GObject.Property(type=bool, default=True)
     
     def __init__(self, primary_widget, secondary_widget, primary_widget_callback, secondary_widget_callback, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        if ModeSwitch.css_provider is None:
+            ModeSwitch.css_provider = Gtk.CssProvider()
+            ModeSwitch.css_provider.load_from_data(ModeSwitch.CSS.encode())
+            screen = Gdk.Screen.get_default()
+            if screen:
+                Gtk.StyleContext.add_provider_for_screen(screen, ModeSwitch.css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
         self.primary_widget = primary_widget
         self.secondary_widget = secondary_widget

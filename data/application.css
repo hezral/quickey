@@ -1,18 +1,244 @@
 /* 
 # application.css
-#
-# Copyright 2021 adi
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>. 
 */
+
+/* Scoped Ring Menu Styles */
+#quickey-window {
+    background-color: transparent;
+}
+
+#quickey-window .ring-button {
+    background-color: black;
+    color: white;
+    border-radius: 9999px;
+    padding: 0;
+    margin: 0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    border: none;
+    transition: background-color 200ms ease;
+}
+
+#quickey-window .ring-button.hidden {
+    opacity: 0;
+}
+
+#quickey-window .ring-button:hover {
+    background-color: #7e22ce;
+}
+
+#quickey-window .label-box {
+    background-color: white;
+    color: #333;
+    border-radius: 6px;
+    padding: 6px 16px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+    opacity: 0;
+    transition: opacity 150ms ease-in-out;
+}
+
+#quickey-window .label-box.visible {
+    opacity: 1;
+}
+
+#quickey-window .label-box label {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+#quickey-window .center-button {
+    background-color: #f0f0f0;
+    color: #666;
+    border-radius: 9999px;
+    padding: 0;
+    border: none;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    transition: opacity 150ms ease-out;
+}
+
+#quickey-window .center-button.hidden {
+    opacity: 0;
+}
+
+#quickey-window .center-button image {
+    padding: 0;
+    margin: 0;
+}
+
+#quickey-window .center-button:hover {
+    background-color: #e0e0e0;
+}
+
+/* Sub-button styles */
+#quickey-window .sub-button {
+    background-color: black;
+    color: white;
+    border-radius: 9999px;
+    padding: 0;
+    margin: 0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    border: none;
+    transition: background-color 200ms ease;
+    opacity: 1;
+}
+
+#quickey-window .sub-button:hover {
+    background-color: #7e22ce;
+}
+
+#quickey-window .sub-button.hidden {
+    opacity: 0;
+}
+
+/* Remove Button Styles */
+#quickey-window .remove-button {
+    background-color: #ef4444;
+    color: white;
+    border-radius: 9999px;
+    border: 2px solid white;
+    padding: 0;
+    /* Offset to corner */
+    opacity: 0;
+    transition: opacity 150ms ease;
+    min-width: 16px;
+    min-height: 16px;
+}
+
+#quickey-window .remove-button.visible {
+    opacity: 1;
+}
+
+#quickey-window .remove-button image {
+    padding: 2px;
+}
+
+#quickey-window .remove-button:hover {
+    background-color: #dc2626;
+}
+
+/* Preferences Window Styles (Whis Overhaul) */
+
+.preferences-main-box {
+    background-color: @theme_base_color;
+    border-radius: 0 0 12px 12px;
+}
+
+/* Action Picker Redesign */
+.action-picker-dialog {
+    padding: 0;
+}
+
+.action-picker-dialog listbox {
+    background-color: transparent;
+}
+
+.action-picker-dialog listbox row {
+    padding: 4px;
+    border: none;
+    background-color: transparent;
+}
+
+.action-picker-dialog listbox row:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+.picker-header-label {
+    font-weight: bold;
+    font-size: 0.85em;
+    opacity: 0.6;
+    letter-spacing: 0.05em;
+}
+
+label#settings-group-label {
+    font-weight: bold;
+    opacity: 0.75;
+    margin-top: 12px;
+    margin-bottom: 4px;
+    color: @theme_text_color;
+}
+
+frame#settings-group-frame {
+    border-radius: 8px;
+    border-style: solid;
+    border-width: 1px;
+    border-color: rgba(0, 0, 0, 0.1);
+    background-color: rgba(0, 0, 0, 0.03);
+    padding: 0;
+}
+
+.settings-sub-label {
+    font-size: 0.9em;
+    color: gray;
+}
+
+.subsettings-row {
+    padding: 0;
+}
+
+.subsettings-content {
+    padding: 12px 16px;
+}
+
+.settings-group-container {
+    margin-bottom: 8px;
+}
+
+/* ListBox Refinements for Reordering */
+listbox {
+    background-color: transparent;
+}
+
+listbox row {
+    background-color: transparent;
+    transition: background-color 150ms ease;
+}
+
+listbox row:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+listbox row:selected {
+    background-color: rgba(0, 0, 0, 0.1);
+    color: inherit;
+}
+
+/* Suggested Action Button (Whis Style) */
+button.suggested-action {
+    background-color: @theme_selected_bg_color;
+    color: @theme_selected_fg_color;
+    font-weight: bold;
+    padding: 2px 12px;
+    border-radius: 6px;
+}
+
+/* Drag Handle */
+image.drag-handle {
+    opacity: 0.4;
+    margin-right: 4px;
+}
+
+/* Make switches and buttons look a bit better */
+switch {
+    margin-left: 10px;
+}
+
+switch.small-switch trough {
+    min-height: 12px;
+    min-width: 24px;
+}
+
+switch.small-switch slider {
+    min-height: 10px;
+    min-width: 10px;
+}
+
+separator {
+    margin: 0;
+    opacity: 0.4;
+    min-height: 1px;
+    background-color: rgba(0, 0, 0, 0.2);
+}
+
+.destructive-action:hover {
+    background-color: #ef4444;
+    color: white;
+}
