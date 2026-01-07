@@ -23,7 +23,10 @@ quickey_sources = [
   'main.py',
   'window.py',
   'mode_switch.py',
-  'preferences.py'
+  'preferences.py',
+  'config_manager.py',
+  'app_scanner.py',
+  'action_handler.py',
 ]
 
 install_data(quickey_sources, install_dir: moduledir)

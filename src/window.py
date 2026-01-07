@@ -3,6 +3,7 @@ import logging
 import json
 import os
 import shutil
+import gc
 from datetime import datetime
 import gi
 gi.require_version('Handy', '1')
@@ -11,6 +12,9 @@ from gi.repository import Gtk, Handy, GObject, Gdk, GLib, Gio
 
 from .mode_switch import ModeSwitch
 from .sub_utils.logging_util import get_logger, log_function_calls
+from .config_manager import ConfigManager
+from .action_handler import ActionHandler
+from .preferences import ActionPicker
 
 logger = get_logger("window")
 
@@ -26,6 +30,10 @@ class quickeyWindow(Handy.ApplicationWindow):
 
         self.app = self.props.application
         self.is_quitting = False
+        
+        # Initialize Logic Handlers
+        self.config_manager = ConfigManager(self.app.gio_settings)
+        self.action_handler = ActionHandler(self)
         
         # Window Setup
         self.set_decorated(False)
@@ -84,103 +92,12 @@ class quickeyWindow(Handy.ApplicationWindow):
         GLib.idle_add(self.refresh_all_ring_buttons)
 
     def load_configured_buttons(self):
-        json_str = self.app.gio_settings.get_string("buttons-json")
-        try:
-            buttons = json.loads(json_str)
-        except Exception:
-            buttons = []
-        
-        # Ensure we have exactly 8 slots
-        final_buttons = [None] * 8
-        
-        if not buttons or not isinstance(buttons, list):
-             logger.warning("Loaded buttons data is invalid or empty in window. Using empty list.")
-             buttons = []
-             
-        # Ensure we have exactly 8 slots
-        final_buttons = [None] * 8
-        
-        # Fill with saved config if valid
-        for i, btn in enumerate(buttons):
-            if i < 8:
-                final_buttons[i] = btn
-
-        # Apply defaults to empty slots
-        for i in range(8):
-            if not final_buttons[i]:
-                # If a slot is completely empty/missing in the list, make it an empty slot
-                # This handles cases where the Saved JSON might be shorter than 8
-                final_buttons[i] = {"name": "Empty", "icon": "list-add-symbolic", "type": "empty", "action": ""}
-                
-        # Ensure Preferences is always present is handled in Preferences Logic, 
-        # but window should just faithfully render what it's given.
-        # However, to avoid lockout, we can keep the check in Preferences.py
-        
-        return final_buttons
+        return self.config_manager.load_configured_buttons()
 
     def on_remove_action(self, button, index):
-        json_str = self.app.gio_settings.get_string("buttons-json")
-        try:
-            buttons = json.loads(json_str)
-        except Exception:
-            buttons = []
-        
-        # Ensure enough padding
-        while len(buttons) < 8:
-            buttons.append({})
-            
-        buttons[index] = {} # Empty it
-        self.app.gio_settings.set_string("buttons-json", json.dumps(buttons))
-        
-        # Redraw or update UI?
-        # For simplicity now, let's just trigger a reload of the ring menu if possible,
-        # but setup_ring_menu is only called once. 
-        # Better: Update the specific button UI.
-        self.refresh_button_ui(index, {"name": "Empty", "icon": "list-add-symbolic", "type": "empty", "action": ""})
+        self.config_manager.reset_slot(index)
+        self.refresh_button_ui(index, self.config_manager._create_empty_slot())
 
-    def get_mpris_state(self):
-        """Returns True if any MPRIS player is 'Playing'"""
-        try:
-            bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-            names_variant = bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "ListNames", None, None, Gio.DBusCallFlags.NONE, -1, None)
-            mpris_players = [n for n in names_variant.get_child_value(0).unpack() if n.startswith("org.mpris.MediaPlayer2.")]
-            
-            for player in mpris_players:
-                # Get PlaybackStatus property
-                reply = bus.call_sync(
-                    player,
-                    "/org/mpris/MediaPlayer2",
-                    "org.freedesktop.DBus.Properties",
-                    "Get",
-                    GLib.Variant("(ss)", ("org.mpris.MediaPlayer2.Player", "PlaybackStatus")),
-                    GLib.VariantType("(v)"),
-                    Gio.DBusCallFlags.NONE,
-                    -1,
-                    None
-                )
-                status = reply.get_child_value(0).get_variant().unpack()
-                if status == "Playing":
-                    return True
-        except Exception as e:
-            logger.error(f"Failed to get MPRIS state: {e}")
-        return False
-
-    def handle_mpris_command(self, cmd):
-        """Sends a command (PlayPause, Next, Previous, etc.) to all MPRIS players"""
-        try:
-            bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-            names_variant = bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "ListNames", None, None, Gio.DBusCallFlags.NONE, -1, None)
-            mpris_players = [n for n in names_variant.get_child_value(0).unpack() if n.startswith("org.mpris.MediaPlayer2.")]
-            
-            for player in mpris_players:
-                if cmd in ["PlayPause", "Next", "Previous", "Stop"]:
-                    bus.call(player, "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player", cmd, None, None, Gio.DBusCallFlags.NONE, -1, None, None)
-                elif cmd == "Forward10":
-                    bus.call(player, "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player", "Seek", GLib.Variant("(x)", (10 * 1000000,)), None, Gio.DBusCallFlags.NONE, -1, None, None)
-                elif cmd == "Backward10":
-                    bus.call(player, "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player", "Seek", GLib.Variant("(x)", (-10 * 1000000,)), None, Gio.DBusCallFlags.NONE, -1, None, None)
-        except Exception as e:
-            logger.error(f"MPRIS command {cmd} failed: {e}")
 
     def refresh_button_ui(self, index, data):
         btn = self.ring_buttons[index]
@@ -193,7 +110,7 @@ class quickeyWindow(Handy.ApplicationWindow):
         
         # Dynamic Media Icon
         if data.get("action") == "media":
-            is_playing = self.get_mpris_state()
+            is_playing = self.action_handler.get_mpris_state()
             icon_name = "media-playback-pause" if is_playing else "media-playback-start"
         
         img = Gtk.Image.new_from_icon_name(icon_name, Gtk.IconSize.MENU)
@@ -244,58 +161,60 @@ class quickeyWindow(Handy.ApplicationWindow):
         action_type = data.get("type")
         action = data.get("action")
         
-        logger.info(f"Button clicked: {data.get('name')} (Type: {action_type})")
-        
         if action_type == "empty":
-            self.app.show_preferences(parent=self)
-            return
+             # Find index of this button
+             try:
+                 index = self.ring_buttons.index(button)
+                 self.open_action_picker(index)
+             except ValueError:
+                 pass
+             return
 
-        if action_type == "internal":
-            if action == "preferences":
-                self.app.show_preferences(parent=self)
-            elif action == "media":
-                self.handle_media_portal()
-            elif action == "files":
-                self.handle_files_portal()
-            elif action == "screenshot":
-                self.handle_screenshot_portal()
-        elif action_type == "command":
-            try:
-                # Run on host to bypass sandbox
-                full_cmd = f"flatpak-spawn --host {action}"
-                GLib.spawn_command_line_async(full_cmd)
-                self.animate_quit()
-            except Exception as e:
-                logger.error(f"Failed to run command {action}: {e}")
-        elif action_type == "app":
-            try:
-                # Use flatpak-spawn --host to launch on host system
-                if action.endswith(".desktop"):
-                    # Use gtk-launch for reliable desktop file handling on host
-                    full_cmd = f"flatpak-spawn --host gtk-launch {action}"
-                else:
-                    full_cmd = f"flatpak-spawn --host {action}"
-                
-                logger.info(f"Executing: {full_cmd}")
-                GLib.spawn_command_line_async(full_cmd)
-                self.animate_quit()
-            except Exception as e:
-                logger.error(f"Failed to launch app {action}: {e}")
-        elif action_type == "prefix":
-            logger.info(f"Prefix action triggered: {action} (Placeholder)")
-            self.animate_quit()
+        self.action_handler.execute(action_type, action)
 
-    def handle_media_portal(self):
-        self.handle_mpris_command("PlayPause")
-        self.animate_quit()
+    def open_action_picker(self, index):
+        self.is_configuring = True
+        self.set_keep_above(False) # Allow dialog to be on top
+        
+        # Identify excluded actions
+        excluded = []
+        singletons = ["media", "screenshot", "preferences"]
+        buttons = self.config_manager.load_configured_buttons()
+        
+        for i, btn in enumerate(buttons):
+            if i == index: continue
+            
+            act = btn.get("action")
+            if act in singletons:
+                excluded.append(act)
 
-    def on_sub_button_clicked(self, widget, action):
+        picker = ActionPicker(self, excluded_actions=excluded)
+        if picker.run() == Gtk.ResponseType.OK:
+            result = picker.get_result()
+            if result:
+                logger.info(f"Configuring slot {index} with {result['name']}")
+                # Load, Update, Save
+                buttons = self.config_manager.load_configured_buttons()
+                buttons[index] = result
+                self.config_manager.save_buttons(buttons)
+                self.refresh_all_ring_buttons()
+        picker.destroy()
+        
+        self.is_configuring = False
+        self.set_keep_above(True)
+
+    def on_sub_button_clicked(self, widget, data):
+        action = data.get("action")
         logger.info(f"Sub-button clicked: {action}")
+        
+        # Built-in MPRIS overrides for specialized behavior
         if action in ["Previous", "Next", "Backward10", "Forward10", "PlayPause", "Stop"]:
-            self.handle_mpris_command(action)
+            self.action_handler.handle_mpris_command(action)
             self.refresh_all_ring_buttons()
-        elif "screenshot" in action:
-            # Handle screenshot actions: area, window, full, area_5s, window_5s, full_5s
+            return
+            
+        if "screenshot" in action:
+             # Handle screenshot actions: area, window, full, area_5s, window_5s, full_5s
             mode = action.replace("screenshot_", "")
             delay = 5 if "_5s" in mode else 0
             clean_mode = mode.replace("_5s", "")
@@ -303,110 +222,18 @@ class quickeyWindow(Handy.ApplicationWindow):
             if delay > 0:
                 logger.info(f"Delaying screenshot {clean_mode} by {delay}s")
                 self.set_visible(False)
-                GLib.timeout_add_seconds(delay, self.handle_screenshot_portal, clean_mode)
+                GLib.timeout_add_seconds(delay, self.action_handler.handle_screenshot_portal, clean_mode)
             else:
-                self.handle_screenshot_portal(clean_mode)
+                self.action_handler.handle_screenshot_portal(clean_mode)
+            return
+
+        # Generic handling
+        self.action_handler.execute(data.get("type"), action)
 
     def refresh_all_ring_buttons(self):
         items_data = self.load_configured_buttons()
         for i, data in enumerate(items_data):
             self.refresh_button_ui(i, data)
-
-    def handle_files_portal(self):
-        try:
-            # Use flatpak-spawn --host xdg-open to open host file manager at home
-            full_cmd = "flatpak-spawn --host xdg-open ."
-            logger.info(f"Executing: {full_cmd}")
-            GLib.spawn_command_line_async(full_cmd)
-            self.animate_quit()
-        except Exception as e:
-            logger.error(f"Files action failed: {e}")
-
-    def handle_screenshot_portal(self, mode="full"):
-        try:
-            # interactive=True for Area/Window selection, False for instant full screen
-            interactive = mode in ["area", "window"]
-            
-            bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-            
-            # Use random token to avoid collisions
-            timestamp = int(GLib.get_real_time() / 1000)
-            token = f"quickey_screenshot_{timestamp}"
-            
-            # The handle path follows a standard format
-            sender = bus.get_unique_name().replace(".", "_").replace(":", "")
-            handle_path = f"/org/freedesktop/portal/desktop/request/{sender}/{token}"
-            
-            # Subscribe to the response signal BEFORE calling the method
-            bus.signal_subscribe(
-                "org.freedesktop.portal.Desktop",
-                "org.freedesktop.portal.Request",
-                "Response",
-                handle_path,
-                None,
-                Gio.DBusSignalFlags.NONE,
-                self.on_screenshot_response,
-                None
-            )
-            
-            options = {
-                "interactive": GLib.Variant("b", interactive),
-                "handle_token": GLib.Variant("s", token)
-            }
-            
-            logger.info(f"Requesting screenshot via Portal (mode={mode}, handle={handle_path})")
-            
-            # Hide the window immediately so it's not in the shot
-            self.set_visible(False)
-            
-            bus.call(
-                "org.freedesktop.portal.Desktop",
-                "/org/freedesktop/portal/desktop",
-                "org.freedesktop.portal.Screenshot",
-                "Screenshot",
-                GLib.Variant("(sa{sv})", ("", options)),
-                None,
-                Gio.DBusCallFlags.NONE,
-                -1,
-                None,
-                None
-            )
-            # DO NOT call animate_quit here; wait for response signal
-        except Exception as e:
-            logger.error(f"Screenshot request failed: {e}")
-            self.animate_quit()
-        return False
-
-    def on_screenshot_response(self, connection, sender, path, interface, signal, params, user_data):
-        try:
-            response_code, results = params.unpack()
-            logger.info(f"Portal response received: code={response_code}")
-            
-            if response_code == 0 and "uri" in results:
-                uri = results["uri"]
-                logger.info(f"Screenshot captured: {uri}")
-                
-                # Sanitize URI and prepare destination
-                src_path = uri.replace("file://", "")
-                if os.path.exists(src_path):
-                    btn_pictures = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_PICTURES)
-                    save_dir = os.path.join(btn_pictures, "Screenshots")
-                    os.makedirs(save_dir, exist_ok=True)
-                    
-                    filename = datetime.now().strftime("Screenshot from %Y-%m-%d %H-%M-%S.png")
-                    dest_path = os.path.join(save_dir, filename)
-                    
-                    shutil.copy(src_path, dest_path)
-                    logger.info(f"Saved screenshot to: {dest_path}")
-                else:
-                    logger.warning(f"Screenshot file not found at {src_path}")
-            else:
-                logger.warning(f"Screenshot cancelled or failed (code {response_code})")
-        except Exception as e:
-            logger.error(f"Error handling screenshot response: {e}")
-        
-        # Finally quit
-        self.animate_quit(should_quit_app=True)
 
     def _get_label_pos(self, nw, nh, angle, base_radius, gap=15, button_radius=24):
         center_x = 300
@@ -484,9 +311,33 @@ class quickeyWindow(Handy.ApplicationWindow):
         
         # 2. Check if new action has sub-buttons
         action_key = data.get("action")
-        if action_key in self.sub_action_map:
-            sub_actions = self.sub_action_map[action_key]
-            
+        
+        # Build normalized sub_actions list
+        sub_actions = []
+        
+        # 1. Custom User Sub-buttons (Highest Priority)
+        user_subs = data.get("sub_buttons", [])
+        if user_subs:
+            for subs in user_subs:
+                 # Standardize tuple format: (icon, action/data, label)
+                 # For generic sub-buttons, pass specific dict as action data
+                 sub_actions.append((subs.get("icon", "system-run-symbolic"), subs, subs.get("name", "")))
+        
+        # 2. Built-in Fallbacks (Only if no custom logic overrides perfectly, 
+        # but here we usually append or replace. For now, let's say Built-ins apply 
+        # normally if no user subs, OR valid for some mix.
+        # Current logic: If key in map, use it. PROPOSED: Merge or replace?)
+        # Let's simple append for now or use built-in if user config is empty.
+        # Actually, "Files" has no built-ins. "Media" does.
+        # If user adds to Media, do we keep original controls?
+        # User said "add another button... to add sub button". Implies adding TO existing.
+        # So we extend.
+        elif action_key in self.sub_action_map:
+             # Legacy map used tuple: (icon, action_string_key, label)
+             for icon, act_key, lbl in self.sub_action_map[action_key]:
+                 sub_actions.append((icon, act_key, lbl))
+        
+        if sub_actions:
             center_x, center_y = 300, 300
             outer_radius = 160
             
@@ -494,23 +345,39 @@ class quickeyWindow(Handy.ApplicationWindow):
             angle = (index * (360 / 8) - 90) * (math.pi / 180)
             
             count = len(sub_actions)
-            # Spacing:
-            # For 4 buttons (Media): spread over ~60 degrees
-            # For 6 buttons (Screenshot): spread over ~100 degrees
-            span = 100 if count > 4 else 60
-            offset = -span / 2
-            step = span / (count - 1)
+            # Dynamic centered spacing
+            spacing = 20 # Degrees between buttons
+            total_spread = (count - 1) * spacing
+            start_offset = -total_spread / 2
             
-            for j, (icon, action, label_text) in enumerate(sub_actions):
+            for j, (icon, action_payload, label_text) in enumerate(sub_actions):
                 sb = Gtk.Button()
                 sb.get_style_context().add_class("sub-button") 
                 sb.get_style_context().add_class("hidden")
-                sb.set_image(Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.MENU)) 
-                sb.set_size_request(30, 30) 
-                # IMPORTANT: Pass action as default arg to bind it correctly in loop
-                sb.connect("clicked", self.on_sub_button_clicked, action)
                 
-                sa = angle + (offset + j * step) * math.pi / 180
+                # Legacy mapping: If user config has old names, map to new names
+                icon_map = {
+                    "grab-area-symbolic": "quickey-grab-area",
+                    "grab-window-symbolic": "quickey-grab-window", 
+                    "grab-screen-symbolic": "quickey-grab-screen"
+                }
+                final_icon = icon_map.get(icon, icon)
+                
+                sb.set_image(Gtk.Image.new_from_icon_name(final_icon, Gtk.IconSize.MENU))
+                sb.set_size_request(30, 30) 
+                
+                # IMPORTANT: Pass action_payload (either dict or string)
+                # We need to wrap string in dict for the new handler if it is from built-ins
+                final_data = action_payload
+                if isinstance(action_payload, str):
+                    final_data = {"action": action_payload, "type": "internal" if "screenshot" in action_payload or "Previous" in action_payload else "command"} 
+                    # Note: Existing built-ins (Previous/Next) are handled by specific string checks in on_sub_button_clicked
+                    # so passing the raw string as 'action' in a dict works best for compatibility if we adjust handler.
+                    final_data = {"action": action_payload} 
+
+                sb.connect("clicked", self.on_sub_button_clicked, final_data)
+                
+                sa = angle + (start_offset + j * spacing) * math.pi / 180
                 sx = center_x + outer_radius * math.cos(sa)
                 sy = center_y + outer_radius * math.sin(sa)
                 
@@ -535,14 +402,18 @@ class quickeyWindow(Handy.ApplicationWindow):
                 # Using functools.partial or default args is safer, but inner execution
                 # contexts in python hold 'sb' and 'sub_lb' correctly if defined here.
                 
-                def on_sub_enter(widget, event, _main_lb=main_lb, _this_sub_lb=sub_lb):
+                def on_sub_enter(widget, event, _main_lb=main_lb, _this_sub_lb=sub_lb, _main_btn=main_btn):
                     _main_lb.get_style_context().remove_class("visible")
                     _this_sub_lb.get_style_context().add_class("visible")
                     
+                    # Keep main button highlighted
+                    _main_btn.get_style_context().add_class("active-parent")
+                    
                 def on_sub_leave(widget, event, _main_lb=main_lb, _this_sub_lb=sub_lb, _main_btn=main_btn):
                     _this_sub_lb.get_style_context().remove_class("visible")
+                    # Do NOT remove active-parent here. Rely on main exit timeout.
                     
-                    # Debounce restoring main label
+                    # Debounce restoring main label (already exists, keeping it separate for now)
                     GLib.timeout_add(50, self._check_restore_label, _main_lb, _main_btn)
                     
                 sb.connect("enter-notify-event", on_sub_enter)
@@ -595,12 +466,12 @@ class quickeyWindow(Handy.ApplicationWindow):
                 ("media-skip-forward-symbolic", "Next", "Next"),
             ],
             "screenshot": [
-                ("selection-symbolic", "screenshot_area", "Area"),
-                ("window-new-symbolic", "screenshot_window", "Window"),
-                ("camera-photo-symbolic", "screenshot_full", "Full"),
-                ("selection-symbolic", "screenshot_area_5s", "Area (5s)"),
-                ("window-new-symbolic", "screenshot_window_5s", "Win (5s)"),
-                ("camera-photo-symbolic", "screenshot_full_5s", "Full (5s)"),
+                ("quickey-grab-area", "screenshot_area", "Area"),
+                ("quickey-grab-window", "screenshot_window", "Window"),
+                ("quickey-grab-screen", "screenshot_full", "Full"),
+                ("quickey-grab-area", "screenshot_area_5s", "Area (5s)"),
+                ("quickey-grab-window", "screenshot_window_5s", "Window (5s)"),
+                ("quickey-grab-screen", "screenshot_full_5s", "Full (5s)"),
             ]
         }
 
@@ -647,9 +518,18 @@ class quickeyWindow(Handy.ApplicationWindow):
             self._rebuild_sub_buttons(i, data)
 
             # New hover logic for main button
-            def on_btn_enter(widget, event, lb, label_data):
+            def on_btn_enter(widget, event, lb, label_data, this_btn=btn):
+                # 1. Hide all other elements
                 for item in self.all_label_data:
                     item['lb'].get_style_context().remove_class("visible")
+                    
+                    # Force remove active-parent from ALL other buttons to fix persistence bug
+                    if item['btn'] != this_btn:
+                         item['btn'].get_style_context().remove_class("active-parent")
+                         if hasattr(item['btn'], "_highlight_timeout") and item['btn']._highlight_timeout:
+                             GLib.source_remove(item['btn']._highlight_timeout)
+                             item['btn']._highlight_timeout = None
+                    
                     for sb in item['sd']:
                         sb.get_style_context().add_class("hidden")
                     for sl_data in item.get('sl', []):
@@ -686,6 +566,9 @@ class quickeyWindow(Handy.ApplicationWindow):
 
         if not is_hovered:
             lb.get_style_context().remove_class("visible")
+            # Clear parent highlight when truly leaving interaction group
+            main_btn.get_style_context().remove_class("active-parent")
+            
             if label_data:
                 for sb in label_data['sd']:
                     sb.get_style_context().add_class("hidden")
@@ -697,22 +580,71 @@ class quickeyWindow(Handy.ApplicationWindow):
         return False
 
     def animate_launch(self):
-        def reveal_button(index):
-            if index < len(self.ring_buttons):
-                self.ring_buttons[index].get_style_context().remove_class("hidden")
-                GLib.timeout_add(25, reveal_button, index + 1)
-            return False
+        # Micro-Optimization 1: Disable GC to prevent stutters
+        gc.disable()
+        
+        start_time = None
+        duration_us = 450 * 1000 
+        num_items = len(self.ring_buttons)
+        if num_items == 0: 
+            gc.enable()
+            return
+            
+        # Micro-Optimization 2: Pre-calculate constants and deltas
+        center_x, center_y = 300, 300
+        radius = self.radius
+        start_angle = -math.pi / 2
+        
+        anim_targets = []
+        for i, btn in enumerate(self.ring_buttons):
+            btn.get_style_context().remove_class("hidden")
+            btn.get_style_context().add_class("animating")
+            
+            target_angle = (i * (360 / num_items) - 90) * (math.pi / 180)
+            delta = target_angle - start_angle
+            anim_targets.append((btn, delta))
 
-        GLib.timeout_add(80, reveal_button, 0)
+        def cubic_ease_out(t):
+            return 1 - (1 - t) ** 3
+            
+        def animation_tick(widget, frame_clock):
+            nonlocal start_time
+            now = frame_clock.get_frame_time()
+            if start_time is None:
+                start_time = now
+            
+            elapsed = now - start_time
+            proc = min(elapsed / duration_us, 1.0)
+            
+            ease_val = cubic_ease_out(proc)
+            
+            for btn, delta in anim_targets:
+                curr_angle = start_angle + delta * ease_val
+                
+                x = center_x + radius * math.cos(curr_angle)
+                y = center_y + radius * math.sin(curr_angle)
+                
+                # Micro-Optimization 3: Rounding for stability
+                self.fixed.move(btn, int(round(x - 24)), int(round(y - 24)))
+                
+            if proc < 1.0:
+                return True 
+            else:
+                # Cleanup
+                for btn in self.ring_buttons:
+                    btn.get_style_context().remove_class("animating")
+                gc.enable() # Re-enable GC
+                return False 
+                
+        self.add_tick_callback(animation_tick)
 
     @log_function_calls
     def reposition_and_present(self):
         # Stealth Sync Strategy (Optimized)
-        # Force XWayland pointer sync using a transient transparent overlay
         logger.info("Triggering Stealth Pointer Sync...")
         
         screen = Gdk.Screen.get_default()
-        sync_window = Gtk.Window(type=Gtk.WindowType.POPUP)
+        sync_window = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
         sync_window.set_type_hint(Gdk.WindowTypeHint.DND)
         sync_window.set_visual(screen.get_rgba_visual())
         sync_window.set_decorated(False)
@@ -729,8 +661,8 @@ class quickeyWindow(Handy.ApplicationWindow):
         
         sync_window.show() 
         
-        # Reduced delay (60ms) for better performance while maintaining sync reliability
-        GLib.timeout_add(60, self._finalize_reposition, sync_window)
+        # Reduced delay (80ms) - slightly bumped for empty desktop reliability
+        GLib.timeout_add(80, self._finalize_reposition, sync_window)
         return False
 
     def _finalize_reposition(self, sync_window):
@@ -837,8 +769,8 @@ class quickeyWindow(Handy.ApplicationWindow):
         return False # For timeout_add
 
     def _on_focus_out(self, widget, event):
-        if self.is_quitting:
-            logger.info("Focus lost but already quitting, ignoring.")
+        if self.is_quitting or getattr(self, "is_configuring", False):
+            logger.info("Focus lost but quitting or configuring, ignoring.")
             return False
             
         # Check if focus moved to another window of the same app (like Preferences)

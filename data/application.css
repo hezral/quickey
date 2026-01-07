@@ -26,6 +26,11 @@
     background-color: #7e22ce;
 }
 
+#quickey-window .ring-button.animating {
+    box-shadow: none;
+    transition: none;
+}
+
 #quickey-window .label-box {
     background-color: white;
     color: #333;
@@ -88,6 +93,7 @@
 #quickey-window .sub-button.hidden {
     opacity: 0;
 }
+
 
 /* Remove Button Styles */
 #quickey-window .remove-button {
@@ -241,4 +247,8 @@ separator {
 .destructive-action:hover {
     background-color: #ef4444;
     color: white;
+}
+
+#quickey-window .ring-button.active-parent {
+    background-color: #7e22ce;
 }
